@@ -2159,6 +2159,29 @@ launch_template() {
       printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     fi
     ;;
+  # Hermes Agent. A crewmate or scout is a `hermes chat --oneshot` turn fed the
+  # canonical launch brief through the operational-input encoder, so the worker
+  # receives the same routed envelope every other adapter receives rather than a
+  # raw prompt. --yolo is firstmate's own unattended-crewmate posture: the brief
+  # is firstmate's contract, the captain already approved the dispatch, and there
+  # is no human at this terminal to answer an approval prompt. --source records
+  # the run as crew work in the worker's own session store.
+  #
+  # hermes --query-file takes a PATH, not inline text (verified live 2026-10-11:
+  # passing the encoded brief inline fails with ENAMETOOLONG), so the encoded
+  # brief is written to a per-task file under the task tmp dir and the query
+  # reads that path. A secondmate keeps its own home and same shape.
+  hermes)
+    if [ "$kind" = secondmate ]; then
+      # A secondmate IS a firstmate primary in its own isolated home, and that home
+      # is this spawn's working directory, so it runs as a plain Hermes session with
+      # FM_HOME already pointing at its own home. There is no separate Hermes
+      # profile to name.
+      printf '%s' 'hermes chat --oneshot --yolo --source firstmate-secondmate --query-file __HERMESQUERY__'
+    else
+      printf '%s' 'hermes chat --oneshot --yolo --source firstmate-crew --query-file __HERMESQUERY__'
+    fi
+    ;;
   opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}__EFFORTFLAG__}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
   pi | pi-signed)
     printf '%s' '__PIBIN____PITUIMODE____PIAPPROVE____PIEXCLUDE____PIRESUME__'
@@ -5336,6 +5359,17 @@ fi
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")
+# hermes --query-file takes a PATH, not inline text (verified live 2026-10-11:
+# the encoded brief inline fails with ENAMETOOLONG, and a bare $TASK_TMP in the
+# launch string collapses to /hermes-query.txt because TASK_TMP is not exported
+# into the launch shell). So the encoded launch brief is written HERE, once, and
+# the launch line only reads that path.
+HERMES_QUERY="$STATE/$ID.hermes-query.txt"
+"$(dirname "$0")/fm-operational-input.sh" encode launch-brief < "$BRIEF" > "$HERMES_QUERY" || {
+  echo "error: could not encode the hermes launch brief for $ID" >&2
+  exit 1
+}
+sq_hermesquery=$(shell_quote "$HERMES_QUERY")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
 sq_piturnend=$(shell_quote "$PROJ_ABS/.pi/extensions/fm-primary-turnend-guard.ts")
@@ -5382,6 +5416,7 @@ if [ "$HARNESS" = rovo ]; then
   LAUNCH=${LAUNCH//__ROVOCONFIGOVERRIDE__/$ROVOCONFIGOVERRIDE}
 fi
 LAUNCH=${LAUNCH//__BRIEF__/$sq_brief}
+LAUNCH=${LAUNCH//__HERMESQUERY__/$sq_hermesquery}
 LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
 LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}

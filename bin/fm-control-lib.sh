@@ -64,7 +64,7 @@ fm_control_verb_allowed() {  # <verb>
 # section 4's verified-adapter list; an unverified adapter is refused rather
 # than guessed at, exactly as a spawn on it would be.
 fm_control_harnesses() {
-  printf '%s\n' claude codex opencode pi pi-signed grok kimi cursor gemini muse rovo omp agy devin
+  printf '%s\n' claude codex opencode pi pi-signed grok kimi cursor gemini muse rovo omp agy devin hermes
 }
 
 fm_control_harness_supported() {  # <harness>
@@ -100,6 +100,7 @@ fm_control_harness_family() {  # <recorded-harness>
     gemini*) printf 'gemini' ;;
     muse*) printf 'muse' ;;
     rovo*) printf 'rovo' ;;
+    hermes*) printf 'hermes' ;;
     *) return 1 ;;
   esac
 }
@@ -133,6 +134,12 @@ fm_control_interrupt_key() {  # <harness>
   case "${1-}" in
     claude|codex|opencode|pi|pi-signed|omp|kimi|cursor|gemini|muse|rovo|agy|devin) printf 'Escape' ;;
     grok) printf 'C-c' ;;
+    # hermes runs an API/CLI agent with no interactive composer and no in-band
+    # interrupt. Reporting a key here would make bin/fm-control.sh claim an
+    # interrupt it cannot deliver, so it refuses instead. Hermes workers are
+    # stopped with SIGTERM against the recorded pid, which is the honest
+    # mechanism for a process without a composer.
+    hermes) return 1 ;;
     *) return 1 ;;
   esac
 }

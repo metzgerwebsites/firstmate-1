@@ -128,7 +128,28 @@ harness_marker() {
     echo omp
     return
   fi
-  [ "${CLAUDECODE:-}" = "1" ] && { echo claude; return; }
+  # Hermes Agent (hermes) runs the fleet supervisor inside its own long-lived
+# session. Two identity signals, because a Hermes turn can be a gateway child
+# or a plain CLI process:
+#   1. HERMES_HOME / HERMES_PROFILE, set by every Hermes process tree (verified on
+#      hermes-agent v0.21.5+9103.gbc2e4d3, macOS, 2026-10-11).
+#   2. The Hermes entrypoint in the process ancestry: the gateway's argv carries
+#      `<home>/.hermes/bin/hermes`, and a CLI session carries the hermes-agent
+#      venv. The ancestry arm keeps a foreign marker inherited from a Claude pane
+#      (CLAUDECODE=1) from outranking a real Hermes process tree.
+# The ancestry arm must be tested BEFORE the CLAUDECODE line, the same ordering
+# hazard the omp and rovo arms document above.
+if [ -n "${HERMES_HOME:-}" ] || [ -n "${HERMES_PROFILE:-}" ]; then
+  if ancestry_names_hermes || [ -z "${CLAUDECODE:-}" ]; then
+    echo hermes
+    return
+  fi
+fi
+if [ "${FM_HERMES_HARNESS:-}" = hermes ] && ancestry_names_hermes; then
+  echo hermes
+  return
+fi
+[ "${CLAUDECODE:-}" = "1" ] && { echo claude; return; }
   if [ "${PI_CODING_AGENT:-}" = "true" ]; then
     if [ "${FM_PI_HARNESS:-}" = pi-signed ]; then echo pi-signed; else echo pi; fi
     return
@@ -163,6 +184,28 @@ ancestry_names_omp() {
   for _ in 1 2 3 4 5 6 7 8; do
     comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
     [ "$(basename -- "$comm")" = omp ] && return 0
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    [ -n "$pid" ] && [ "$pid" -gt 1 ] || return 1
+  done
+  return 1
+}
+
+# True when a Hermes Agent process sits within sixteen parents of this one.
+# The same bounded walk the session-lock ancestry uses, matching the two places a
+# Hermes process tree shows itself: an argv/comm path containing a `.hermes/`
+# component, or the hermes-agent install path. Anchored on whole path components
+# so an ordinary `bin/fm-hermes-*.sh` path is not a harness process.
+ancestry_names_hermes() {
+  local pid=$$ comm args
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
+    args=$(ps -o args= -p "$pid" 2>/dev/null)
+    case "/$comm" in
+      */.hermes/bin/hermes | */hermes-agent/*) return 0 ;;
+    esac
+    case "/$args" in
+      */.hermes/bin/hermes* | */hermes-agent/*) return 0 ;;
+    esac
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
     [ -n "$pid" ] && [ "$pid" -gt 1 ] || return 1
   done

@@ -27,7 +27,27 @@ unset _FM_SESSION_LOCK_LIB_DIR
 # Known harness command names; extend when a new adapter is verified. omp is
 # anchored exactly like pi: its process name is the bare word `omp` (verified,
 # omp 18.1.11), and a substring match would claim ompd or comp.
+# hermes is NOT in this name list: a Hermes process tree shows itself as the
+# python/entrypoint path `~/.hermes/bin/hermes` or the hermes-agent install
+# tree, never as a stable bare command name, so it is matched structurally by
+# fm_harness_hermes_process_matches below rather than by a name table entry.
 FM_HARNESS_RE='claude|codex|opencode|grok|kimi|^pi$|^pi-signed$|^omp$'
+
+# True when command name $1 or argument string $2 shows a Hermes Agent process.
+# Anchored on whole path components (`/.hermes/bin/hermes`, `/hermes-agent/`) so
+# an ordinary firstmate path such as bin/fm-hermes-*.sh, or any user directory
+# that merely contains "hermes", is correctly NOT a harness process. Sets
+# FM_HARNESS_IS_CLAUDE=0, because a Hermes session is never a Claude session.
+fm_harness_hermes_process_matches() {  # <comm> <args>
+  local comm=$1 args=$2
+  case "/$comm" in
+    */.hermes/bin/hermes | */hermes-agent/*) FM_HARNESS_IS_CLAUDE=0; return 0 ;;
+  esac
+  case "/$args" in
+    */.hermes/bin/hermes* | */hermes-agent/*) FM_HARNESS_IS_CLAUDE=0; return 0 ;;
+  esac
+  return 1
+}
 
 # The same harnesses as exact executable names. Keep in sync with
 # FM_HARNESS_RE. Used only for the stricter path evidence below, where the
@@ -95,6 +115,11 @@ fm_harness_process_matches() {  # <comm> <args>
   # locate its own harness in the ancestry, so every session start refuses the
   # fleet lock as read-only and the park can never arm.
   fm_cursor_process_matches "$comm" "$args" "$argv0" && return 0
+  # Hermes Agent: matched structurally, because it has no stable bare command
+  # name. Same shape as the Cursor arm above and for the same reason: without
+  # it a Hermes primary can never locate itself in its own ancestry, so every
+  # session start would refuse the fleet lock and stay read-only forever.
+  fm_harness_hermes_process_matches "$comm" "$args" && return 0
   return 1
 }
 
